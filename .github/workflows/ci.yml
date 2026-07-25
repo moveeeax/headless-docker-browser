@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: shellcheck entrypoint.sh ctl.sh hooks/after-load.sh tests/smoke.sh
+
+      - name: python syntax
+        run: python3 -m py_compile cdp.py
+
+      - name: compose file is valid
+        run: VNC_PASSWORD=ci-lint docker compose config --quiet
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build image
+        run: docker build -t headless-docker-browser:test .
+
+      - name: smoke test
+        run: tests/smoke.sh

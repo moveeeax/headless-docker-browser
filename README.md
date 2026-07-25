@@ -12,7 +12,7 @@ Headless automation breaks on the pages that matter most: the ones that check fo
 | --- | --- | --- |
 | noVNC | `6080` | Watch and click from any browser: `http://host:6080/vnc.html` |
 | VNC | `5900` | Same session from a native VNC client |
-| CDP | `9222` | Chrome DevTools Protocol, for scripted control |
+| CDP | `9222`, container-local | Chrome DevTools Protocol, for scripted control — reachable from inside the container only, see [Security notes](#security-notes) |
 
 ## Quick start
 
@@ -26,7 +26,7 @@ echo 'VNC_PASSWORD=pick-your-own' > .env
 docker compose up --build -d
 ```
 
-Open <http://127.0.0.1:6080/vnc.html> and you are looking at a live Chromium on `https://google.com/`. All three ports are bound to `127.0.0.1` in `docker-compose.yml`; publishing them on `0.0.0.0` publishes a remote-controllable browser, so do that only behind something that authenticates.
+Open <http://127.0.0.1:6080/vnc.html> and you are looking at a live Chromium on `https://google.com/`. Both published ports are bound to `127.0.0.1` in `docker-compose.yml`; publishing them on `0.0.0.0` publishes a remote-controllable browser, so do that only behind something that authenticates. CDP is deliberately not published at all — drive it with `docker compose exec`.
 
 Point it somewhere else:
 
@@ -105,7 +105,9 @@ Every knob is an environment variable with a default baked into the `Dockerfile`
 | `VNC_PORT` / `NOVNC_PORT` / `CDP_PORT` | `5900` / `6080` / `9222` | Listening ports |
 | `VNC_PASSWORD` | *(empty)* | Empty means **no password at all**; the entrypoint warns |
 | `VNC_VIEW_ONLY` | `0` | `1` makes VNC watch-only |
-| `CDP_BIND` | `127.0.0.1` | Set to `0.0.0.0` to reach CDP from the host |
+| `CDP_BIND` | `127.0.0.1` | Passed as `--remote-debugging-address`. Current Chromium ignores anything but loopback; the entrypoint warns if you set something else |
+| `CDP_ALLOW_ORIGINS` | *(empty)* | Empty leaves the DevTools origin check on. Setting it (e.g. `*`) passes `--remote-allow-origins` and lets any web page take over the browser — see below |
+| `CDP_ALLOW_ANY_SCHEME` | *(empty)* | `1` lets `cdp goto` navigate to schemes other than `http`/`https`/`about`, including `file://` |
 | `KIOSK` | `0` | `1` for `--kiosk`, otherwise `--start-fullscreen` |
 | `WINDOW_MANAGER` | `1` | fluxbox; without it fullscreen and focus do not work |
 | `AUDIO` | `pulse` | `pulse` loads a null sink with a real clock; anything else falls back to ALSA |
@@ -124,10 +126,13 @@ Every knob is an environment variable with a default baked into the `Dockerfile`
 
 Read these before exposing anything.
 
-- **`NO_SANDBOX=1` is the default.** The Chromium sandbox needs privileges the container does not have by default. It is convenient and it is a weaker boundary — do not browse hostile pages this way. To harden it, run with `--cap-add=SYS_ADMIN` or a `seccomp` profile that permits `user_namespaces`, and set `NO_SANDBOX=0`.
+- **`NO_SANDBOX=1` is the default.** The Chromium sandbox needs privileges the container does not have by default. It is convenient and it is a weaker boundary — do not browse hostile pages this way. To harden it, set `NO_SANDBOX=0` and give the container what the sandbox needs: a `seccomp` profile that permits `user_namespaces` (or `--cap-add=SYS_ADMIN`), which means relaxing the `cap_drop`/`no-new-privileges` lines below.
 - **An empty `VNC_PASSWORD` means an open VNC server.** `docker-compose.yml` deliberately has no default, so `docker compose up` fails loudly instead of starting an unauthenticated one.
 - **VNC is unencrypted.** Across a network, tunnel it: `ssh -L 6080:127.0.0.1:6080 host`.
-- **CDP is full control with no authentication.** Anyone who reaches port `9222` can read every cookie in the profile. Keep `CDP_BIND=127.0.0.1` unless you know exactly who can reach the port.
+- **CDP is full control with no authentication.** Anyone who reaches port `9222` can read every cookie in the profile, drive the browser, and navigate it to `file://` to read the container's filesystem. There is no password on it and there cannot be. So it is not published: Chromium binds it to `127.0.0.1` inside the container, `docker-compose.yml` maps no host port for it, and the image no longer `EXPOSE`s it. Use `docker compose exec browser cdp …`. If you genuinely need it on the host, put your own authenticated relay in front of it — do not just map the port.
+- **`CDP_BIND` cannot open that port up any more.** Chromium (checked on 150.0.7871.181) ignores `--remote-debugging-address` and binds loopback regardless, so the old `CDP_BIND=0.0.0.0` was a no-op that read like a working feature. The entrypoint now says so out loud.
+- **The DevTools origin check is on, and should stay on.** It is the only thing stopping a page *loaded in this very browser* from opening `ws://127.0.0.1:9222` and taking the session over — cookies, keystrokes, local files. `CDP_ALLOW_ORIGINS` turns it off, and is only there for browser-based DevTools frontends. `cdp` does not need it: it sends no `Origin` header at all.
+- **The container drops every capability.** `docker-compose.yml` runs it with `cap_drop: ALL` and `no-new-privileges`, on top of the non-root `browser` user baked into the image. Note that `no-new-privileges` also blocks Chromium's setuid sandbox helper, so if you set `NO_SANDBOX=0` you need a kernel that gives the container unprivileged user namespaces.
 - The persistent profile holds real session cookies. Treat the `profile` volume as a credential.
 
 ## Layout
@@ -138,8 +143,20 @@ entrypoint.sh       brings up X, audio, WM, VNC, noVNC, then supervises Chromium
 ctl.sh              -> /usr/local/bin/ctl   pixel-level input via xdotool/scrot
 cdp.py              -> /usr/local/bin/cdp   DOM-level control over CDP
 hooks/after-load.sh default post-load hook, baked in and overridable
-docker-compose.yml  local setup, all ports bound to 127.0.0.1
+docker-compose.yml  local setup, published ports bound to 127.0.0.1
+tests/smoke.sh      container smoke test, run by CI on every push
 ```
+
+## Tests
+
+`tests/smoke.sh` builds nothing itself — it starts the image and asserts the things that break quietly: that CDP answers, that it is listening on loopback only, that DevTools rejects a foreign `Origin`, that `cdp` honours `CDP_PORT` and refuses `file://`, and that `ctl` rejects bad arguments instead of writing outside `/screenshots`.
+
+```bash
+docker build -t headless-docker-browser:test .
+tests/smoke.sh
+```
+
+`.github/workflows/ci.yml` runs `shellcheck`, `python3 -m py_compile`, `docker compose config`, and that smoke test on every push and pull request.
 
 ## License
 

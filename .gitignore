@@ -12,3 +12,7 @@ screenshots/
 profile/
 *.png
 *.log
+
+# Python
+__pycache__/
+*.pyc

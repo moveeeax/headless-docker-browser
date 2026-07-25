@@ -7,14 +7,54 @@
 """
 import base64
 import json
+import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 import websocket  # пакет python3-websocket (websocket-client)
 
-PORT = 9222
+
+def _port():
+    raw = os.environ.get("CDP_PORT", "9222")
+    try:
+        return int(raw)
+    except ValueError:
+        sys.exit(f"CDP_PORT должен быть числом, а не {raw!r}")
+
+
+# Порт берём из окружения: entrypoint запускает Chromium с тем же CDP_PORT,
+# и зашитая константа ломала всё, кроме значения по умолчанию.
+PORT = _port()
 TIMEOUT = 20
+
+COMMANDS = ("goto", "click", "fill", "eval", "text", "wait", "ready", "shot")
+
+# Page.navigate ходит куда угодно: file:// прочитает файловую систему
+# контейнера, javascript: выполнится в контексте открытой страницы. Команды
+# cdp вызываются в том числе из хуков, поэтому схему проверяем.
+SAFE_SCHEMES = ("http", "https", "about")
+
+
+def check_url(url):
+    if os.environ.get("CDP_ALLOW_ANY_SCHEME") == "1":
+        return url
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if not scheme:
+        sys.exit(f"URL без схемы: {url}")
+    if scheme not in SAFE_SCHEMES:
+        sys.exit(
+            f"схема {scheme}: не разрешена, только {'/'.join(SAFE_SCHEMES)} "
+            "(снять проверку: CDP_ALLOW_ANY_SCHEME=1)"
+        )
+    return url
+
+
+def arg(args, i, what):
+    if len(args) <= i:
+        sys.exit(f"не хватает аргумента: {what}")
+    return args[i]
 
 
 def page_socket():
@@ -99,31 +139,41 @@ def main():
         sys.exit(1)
 
     cmd, args = sys.argv[1], sys.argv[2:]
+    # Всё, что можно проверить без браузера, проверяем до подключения:
+    # иначе `cdp опечатка` сначала падает на «нет открытых вкладок».
+    if cmd not in COMMANDS:
+        sys.exit(f"неизвестная команда: {cmd}")
+    if cmd == "goto":
+        check_url(arg(args, 0, "goto URL"))
+
     c = CDP()
 
     if cmd == "goto":
         c.send("Page.navigate", url=args[0])
 
     elif cmd == "click":
-        x, y = c.box(args[0])
+        selector = arg(args, 0, "click SELECTOR")
+        x, y = c.box(selector)
         c.click_at(x, y)
-        print(f"клик по {args[0]} в ({x:.0f}, {y:.0f})")
+        print(f"клик по {selector} в ({x:.0f}, {y:.0f})")
 
     elif cmd == "fill":
-        selector, value = args[0], args[1]
+        selector = arg(args, 0, "fill SELECTOR ТЕКСТ")
+        value = arg(args, 1, "fill SELECTOR ТЕКСТ")
         x, y = c.box(selector)
         c.click_at(x, y)
         for ch in value:
             c.send("Input.dispatchKeyEvent", type="char", text=ch)
 
     elif cmd == "eval":
-        print(json.dumps(c.js(args[0]), ensure_ascii=False))
+        print(json.dumps(c.js(arg(args, 0, "eval JS")), ensure_ascii=False))
 
     elif cmd == "text":
         print(c.js("document.body.innerText"))
 
     elif cmd == "wait":
         # ждём появления элемента, до 15 секунд
+        arg(args, 0, "wait SELECTOR")
         ok = c.js(
             """
             (async () => {
@@ -142,7 +192,10 @@ def main():
 
     elif cmd == "ready":
         # ждём, пока вкладка уйдёт с about:blank и добьёт readyState до complete
-        timeout = float(args[0]) if args else 60.0
+        try:
+            timeout = float(args[0]) if args else 60.0
+        except ValueError:
+            sys.exit(f"ready ждёт число секунд, а не {args[0]!r}")
         deadline = time.time() + timeout
         while time.time() < deadline:
             state = c.js("document.readyState")
@@ -160,9 +213,6 @@ def main():
         with open(out, "wb") as f:
             f.write(base64.b64decode(data))
         print(out)
-
-    else:
-        sys.exit(f"неизвестная команда: {cmd}")
 
     c.close()
 

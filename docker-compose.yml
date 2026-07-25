@@ -14,13 +14,20 @@ services:
       AUDIO: "pulse"
       CLICK_DELAY: "60"
       CLICK_XY: "684 500"
-      CDP_BIND: "0.0.0.0"
+      # CDP слушает 127.0.0.1 внутри контейнера и наружу не публикуется:
+      # это полный контроль над браузером без всякой аутентификации.
+      # Управлять им: docker compose exec browser cdp <команда>.
+      CDP_BIND: "127.0.0.1"
     ports:
       - "127.0.0.1:6080:6080"   # noVNC
       - "127.0.0.1:5900:5900"   # VNC
-      - "127.0.0.1:9222:9222" # CDP
     volumes:
       - profile:/profile
+    # Процесс и так не root (uid 1000), эти две строки закрывают путь наверх.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
 volumes:
