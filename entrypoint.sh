@@ -65,7 +65,7 @@ fi
 # --- VNC -------------------------------------------------------------------
 vnc_args=(-display "$DISPLAY" -rfbport "$VNC_PORT" -forever -shared -quiet -bg)
 
-if [ -n "${VNC_PASSWORD}" ]; then
+if [ -n "${VNC_PASSWORD:-}" ]; then
     x11vnc -storepasswd "$VNC_PASSWORD" /tmp/vncpass > /dev/null 2>&1
     vnc_args+=(-rfbauth /tmp/vncpass)
 else
@@ -87,16 +87,23 @@ WEB_PID=$!
 log "noVNC на http://<host>:${NOVNC_PORT}/vnc.html"
 
 # --- Chromium --------------------------------------------------------------
+# Современный Chromium (проверено на 150.0.7871.181) игнорирует
+# --remote-debugging-address и в любом случае слушает 127.0.0.1. Флаг оставлен
+# для старых сборок, но обещать доступ к CDP с хоста мы больше не можем.
+case "${CDP_BIND}" in
+    127.*|localhost|::1|"") ;;
+    *) log "ВНИМАНИЕ: CDP_BIND=${CDP_BIND} игнорируется современным Chromium, CDP останется на 127.0.0.1" ;;
+esac
+
 chrome_flags=(
     --user-data-dir="${PROFILE_DIR}"
     --remote-debugging-port="${CDP_PORT}"
     --remote-debugging-address="${CDP_BIND}"
-    --remote-allow-origins=*
-    --window-position=0,0
+    --window-position="0,0"
     --window-size="${SCREEN_WIDTH},${SCREEN_HEIGHT}"
     --no-first-run
     --no-default-browser-check
-    --disable-features=Translate,InfobarsUI
+    --disable-features="Translate,InfobarsUI"
     --disable-session-crashed-bubble
     --hide-crash-restore-bubble
     --password-store=basic
@@ -109,6 +116,16 @@ chrome_flags=(
 
 [ "${DISABLE_GPU}" = "1" ] && chrome_flags+=(--disable-gpu)
 [ "${MUTE_AUDIO}" = "1" ] && chrome_flags+=(--mute-audio)
+
+# Origin-проверка DevTools — единственное, что мешает произвольной странице,
+# открытой в этом же браузере, постучаться в ws://127.0.0.1:${CDP_PORT} и
+# получить полный контроль: куки всего профиля, ввод, чтение локальных файлов
+# через file://. cdp(1) ходит без заголовка Origin (suppress_origin), так что
+# ослаблять проверку ему не нужно; отсюда пустое значение по умолчанию.
+if [ -n "${CDP_ALLOW_ORIGINS:-}" ]; then
+    log "ВНИМАНИЕ: CDP_ALLOW_ORIGINS=${CDP_ALLOW_ORIGINS}, origin-проверка DevTools ослаблена"
+    chrome_flags+=(--remote-allow-origins="${CDP_ALLOW_ORIGINS}")
+fi
 
 [ "${NO_SANDBOX}" = "1" ] && chrome_flags+=(--no-sandbox)
 if [ "${KIOSK}" = "1" ]; then
@@ -124,8 +141,13 @@ if [ -n "${EXTRA_CHROME_FLAGS}" ]; then
 fi
 
 # После нечистого выключения в профиле остаётся лок, иначе Chromium не стартует.
-rm -f "${PROFILE_DIR}/SingletonLock" "${PROFILE_DIR}/SingletonSocket" \
-      "${PROFILE_DIR}/SingletonCookie" 2>/dev/null || true
+# Чистим все три файла и на старте, и перед каждым перезапуском: одного
+# SingletonLock мало, повисший Socket или Cookie точно так же держат профиль.
+clear_singleton_locks() {
+    rm -f "${PROFILE_DIR}/SingletonLock" "${PROFILE_DIR}/SingletonSocket" \
+          "${PROFILE_DIR}/SingletonCookie" 2>/dev/null || true
+}
+clear_singleton_locks
 
 # --- хук после загрузки страницы -------------------------------------------
 run_after_load() {
@@ -175,6 +197,6 @@ while [ "$RUNNING" = "1" ]; do
         cleanup
     fi
     log "Chromium упал или был закрыт, перезапуск через 2 секунды"
-    rm -f "${PROFILE_DIR}/SingletonLock" 2>/dev/null || true
+    clear_singleton_locks
     sleep 2
 done

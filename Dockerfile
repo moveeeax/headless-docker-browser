@@ -44,7 +44,7 @@ ENV URL="https://example.com" \
     NOVNC_PORT="6080" \
     CDP_PORT="9222" \
     CDP_BIND="127.0.0.1" \
-    VNC_PASSWORD="" \
+    CDP_ALLOW_ORIGINS="" \
     VNC_VIEW_ONLY="0" \
     PROFILE_DIR="/profile" \
     NO_SANDBOX="1" \
@@ -62,7 +62,10 @@ ENV URL="https://example.com" \
     AUDIO="pulse" \
     MUTE_AUDIO="1"
 
-EXPOSE 5900 6080 9222
+# VNC_PASSWORD намеренно не объявлен через ENV: пароль в метаданных образа
+# виден любому, кто сделает docker history. Пустое значение обрабатывает
+# entrypoint, задавать пароль нужно при запуске.
+EXPOSE 5900 6080
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${CDP_PORT}/json/version" > /dev/null || exit 1
