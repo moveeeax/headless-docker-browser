@@ -1,0 +1,27 @@
+services:
+  browser:
+    build: .
+    image: keepalive-browser:local
+    shm_size: "2gb"
+    environment:
+      URL: "https://google.com/"
+      SCREEN_WIDTH: "1920"
+      SCREEN_HEIGHT: "1080"
+      # No default on purpose: an empty value starts x11vnc without a password.
+      VNC_PASSWORD: "${VNC_PASSWORD:?set VNC_PASSWORD in .env, see .env.example}"
+      KIOSK: "0"
+      WINDOW_MANAGER: "1"
+      AUDIO: "pulse"
+      CLICK_DELAY: "60"
+      CLICK_XY: "684 500"
+      CDP_BIND: "0.0.0.0"
+    ports:
+      - "127.0.0.1:6080:6080"   # noVNC
+      - "127.0.0.1:5900:5900"   # VNC
+      - "127.0.0.1:9222:9222" # CDP
+    volumes:
+      - profile:/profile
+    restart: unless-stopped
+
+volumes:
+  profile:

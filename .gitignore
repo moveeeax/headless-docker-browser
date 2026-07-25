@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Local secrets and overrides
+.env
+.env.*
+!.env.example
+docker-compose.override.yml
+
+# Runtime artifacts
+screenshots/
+profile/
+*.png
+*.log
