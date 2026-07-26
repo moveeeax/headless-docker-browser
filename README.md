@@ -60,7 +60,7 @@ A small CDP client with no Node.js in the image. Selectors survive a layout chan
 docker compose exec browser cdp goto https://example.com
 docker compose exec browser cdp wait "#login"          # poll for an element, up to 15s
 docker compose exec browser cdp click "#login"         # scrolls into view, then clicks its centre
-docker compose exec browser cdp fill "input[name=q]" "search text"
+docker compose exec browser cdp fill "input[name=q]" "search text"    # replaces whatever was already in the field
 docker compose exec browser cdp eval "document.title"
 docker compose exec browser cdp text                   # document.body.innerText
 docker compose exec browser cdp shot /screenshots/x.png

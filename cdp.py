@@ -127,6 +127,33 @@ class CDP:
                 clickCount=1,
             )
 
+    def clear_field(self):
+        """Ctrl+A, затем Backspace: стираем то, что уже было в поле.
+
+        Без этого fill дописывал текст к существующему значению вместо
+        замены — расхождение с тем, что обычно ждут от "fill" в любом
+        другом инструменте автоматизации, и оно било по идемпотентности:
+        повторный fill на непустое поле удваивал текст.
+        """
+        ctrl = 2  # EventModifiers: Alt=1, Ctrl=2, Meta=4, Shift=8
+        for kind in ("keyDown", "keyUp"):
+            self.send(
+                "Input.dispatchKeyEvent",
+                type=kind,
+                modifiers=ctrl,
+                code="KeyA",
+                key="a",
+                windowsVirtualKeyCode=65,
+            )
+        for kind in ("keyDown", "keyUp"):
+            self.send(
+                "Input.dispatchKeyEvent",
+                type=kind,
+                code="Backspace",
+                key="Backspace",
+                windowsVirtualKeyCode=8,
+            )
+
     def close(self):
         self.ws.close()
 
@@ -162,6 +189,7 @@ def main():
         value = arg(args, 1, "fill SELECTOR ТЕКСТ")
         x, y = c.box(selector)
         c.click_at(x, y)
+        c.clear_field()
         for ch in value:
             c.send("Input.dispatchKeyEvent", type="char", text=ch)
 
