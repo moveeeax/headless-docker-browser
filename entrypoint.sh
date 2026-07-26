@@ -18,7 +18,9 @@ cleanup() {
     RUNNING=0
     log "shutting down"
     for pid in "$HOOK_PID" "$CHROME_PID" "$WEB_PID" "$VNC_PID" "$WM_PID" "$XVFB_PID"; do
-        [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+        if [ -n "$pid" ]; then
+            kill "$pid" 2>/dev/null || true
+        fi
     done
     wait 2>/dev/null || true
     exit 0

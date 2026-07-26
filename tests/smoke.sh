@@ -6,8 +6,10 @@
 #   docker build -t headless-docker-browser:test .
 #   tests/smoke.sh
 #
-# Проверки-помощники вызываются косвенно, через check.
-# shellcheck disable=SC2329
+# Проверки-помощники вызываются косвенно, через check и trap. Из-за этого
+# линтер считает их «неиспользуемыми» (SC2329) и их тела «недостижимыми»
+# (SC2317) — оба ложные для такого тест-раннера, поэтому глушим их для файла.
+# shellcheck disable=SC2329,SC2317
 set -uo pipefail
 
 IMAGE="${IMAGE:-headless-docker-browser:test}"
