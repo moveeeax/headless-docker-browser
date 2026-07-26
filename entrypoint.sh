@@ -17,7 +17,10 @@ RUNNING=1
 cleanup() {
     RUNNING=0
     log "shutting down"
-    for pid in "$HOOK_PID" "$CHROME_PID" "$WEB_PID" "$VNC_PID" "$WM_PID" "$XVFB_PID"; do
+    # HOOK_PID is a whole process group (see setsid below): kill it by
+    # its negative PID or its children survive the wrapper.
+    [ -n "$HOOK_PID" ] && kill -- -"$HOOK_PID" 2>/dev/null || true
+    for pid in "$CHROME_PID" "$WEB_PID" "$VNC_PID" "$WM_PID" "$XVFB_PID"; do
         [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
     done
     wait 2>/dev/null || true
@@ -176,19 +179,26 @@ run_after_load() {
         bash -c "${AFTER_LOAD}" || log "хук завершился с ошибкой (код $?)"
     fi
 }
+export -f log run_after_load
 
 while [ "$RUNNING" = "1" ]; do
     log "запускаю Chromium: ${URL}"
     chromium "${chrome_flags[@]}" "${URL}" &
     CHROME_PID=$!
 
-    # Хук уходит в фон: цикл должен сторожить браузер, а не ждать кликов.
-    run_after_load &
+    # run_after_load порождает curl, cdp и в итоге сам хук (сон, клик,
+    # снимок) — процессы, которые запросто переживают саму обёртку.
+    # setsid делает её лидером новой сессии/группы, так что "kill" по
+    # отрицательному PID ниже убивает всё дерево разом; раньше
+    # "kill $HOOK_PID" убивал только обёртку, а хук, всё ещё спящий или
+    # работающий, осиротевшим уходил под tini и копился с каждым падением
+    # или рестартом Chromium.
+    setsid bash -c run_after_load &
     HOOK_PID=$!
 
     wait "$CHROME_PID" || true
     CHROME_PID=""
-    kill "$HOOK_PID" 2>/dev/null || true
+    kill -- -"$HOOK_PID" 2>/dev/null || true
     HOOK_PID=""
 
     [ "$RUNNING" = "1" ] || break

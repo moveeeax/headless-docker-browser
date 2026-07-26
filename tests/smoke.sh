@@ -92,6 +92,15 @@ shot_ok() {
         docker exec smoke-default test -s /screenshots/smoke.png
 }
 
+# fill раньше дописывал текст к тому, что уже было в поле, вместо замены —
+# второй fill на то же поле удваивал значение.
+fill_replaces() {
+    docker exec smoke-default \
+        cdp eval "document.body.innerHTML = '<input id=probe value=old>'; 1" > /dev/null &&
+    docker exec smoke-default cdp fill "#probe" "new" > /dev/null &&
+    eq "$(docker exec smoke-default cdp eval "document.querySelector('#probe').value")" '"new"'
+}
+
 # --- образ по умолчанию -----------------------------------------------------
 echo "== образ по умолчанию =="
 if ! start smoke-default 9222; then
@@ -123,6 +132,8 @@ check "неизвестная команда cdp отвергается" \
     not docker exec smoke-default cdp такой-команды-нет
 check "cdp click без селектора не падает трейсбеком" \
     out_lacks traceback docker exec smoke-default cdp click
+check "cdp fill заменяет содержимое поля, а не дописывает к нему" \
+    fill_replaces
 
 check "ctl shot пишет снимок" shot_ok
 check "ctl shot не выходит за пределы каталога" \
@@ -152,6 +163,39 @@ if start smoke-alt 9333 -e CDP_PORT=9333 -e CDP_ALLOW_ORIGINS='*'; then
         logs_have smoke-alt "origin-проверка DevTools ослаблена"
 else
     fail "контейнер с CDP_PORT=9333 не поднялся"
+fi
+
+# --- хук не остаётся сиротой после падения Chromium -------------------------
+# run_after_load уходит в фон и сама порождает дерево процессов (curl, cdp,
+# сам хук). При рестарте Chromium цикл в entrypoint раньше убивал только эту
+# обёртку — хук, если он ещё спал или работал, оставался жить осиротевшим и
+# копился с каждым падением страницы. Долгий фиктивный хук (sleep 300)
+# делает это дерево видимым и переживающим один цикл падение/рестарт.
+echo
+echo "== хук не остаётся сиротой после рестарта Chromium =="
+if start smoke-hook 9222 -e HOOK_FILE=/nonexistent -e AFTER_LOAD='sleep 300' -e AFTER_LOAD_DELAY=0; then
+    hook_up=0
+    for _ in $(seq 1 30); do
+        if docker exec smoke-hook pgrep -f 'sleep 300' > /dev/null 2>&1; then
+            hook_up=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$hook_up" = "1" ]; then
+        pass "фиктивный хук (sleep 300) запустился"
+        docker exec smoke-hook pkill -x chromium > /dev/null 2>&1 || true
+        # entrypoint замечает падение, чистит Singleton-локи и перезапускает
+        # Chromium через 2 секунды — даём вдвое больше и хуку время подняться.
+        sleep 8
+        left="$(docker exec smoke-hook pgrep -c -f 'sleep 300' 2>/dev/null || echo 0)"
+        check "старый хук не остаётся висеть после рестарта Chromium (осталось: $left)" \
+            eq "$left" 1
+    else
+        fail "фиктивный хук не запустился за 30с"
+    fi
+else
+    fail "контейнер с фиктивным хуком не поднялся"
 fi
 
 echo
