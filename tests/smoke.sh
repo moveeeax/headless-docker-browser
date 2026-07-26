@@ -6,8 +6,9 @@
 #   docker build -t headless-docker-browser:test .
 #   tests/smoke.sh
 #
-# Проверки-помощники вызываются косвенно, через check.
-# shellcheck disable=SC2329
+# Проверки-помощники вызываются косвенно, через check() или напрямую по
+# имени функции, поэтому shellcheck считает их тела недостижимыми.
+# shellcheck disable=SC2329,SC2317
 set -uo pipefail
 
 IMAGE="${IMAGE:-headless-docker-browser:test}"

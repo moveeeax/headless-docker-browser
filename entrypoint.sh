@@ -19,9 +19,13 @@ cleanup() {
     log "shutting down"
     # HOOK_PID is a whole process group (see setsid below): kill it by
     # its negative PID or its children survive the wrapper.
-    [ -n "$HOOK_PID" ] && kill -- -"$HOOK_PID" 2>/dev/null || true
+    if [ -n "$HOOK_PID" ]; then
+        kill -- -"$HOOK_PID" 2>/dev/null || true
+    fi
     for pid in "$CHROME_PID" "$WEB_PID" "$VNC_PID" "$WM_PID" "$XVFB_PID"; do
-        [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+        if [ -n "$pid" ]; then
+            kill "$pid" 2>/dev/null || true
+        fi
     done
     wait 2>/dev/null || true
     exit 0
