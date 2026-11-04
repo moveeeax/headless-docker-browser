@@ -1,7 +1,7 @@
 services:
   browser:
     build: .
-    image: keepalive-browser:local
+    image: headless-docker-browser:local
     shm_size: "2gb"
     environment:
       URL: "https://google.com/"

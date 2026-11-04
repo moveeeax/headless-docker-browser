@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Chromium из Debian это настоящий deb, а не snap-обёртка как chromium-browser в Ubuntu.
 # novnc + python3-websockify дают веб-клиент, tini пожинает зомби-процессы Chromium.
@@ -45,6 +45,7 @@ ENV URL="https://example.com" \
     CDP_PORT="9222" \
     CDP_BIND="127.0.0.1" \
     CDP_ALLOW_ORIGINS="" \
+    CDP_ALLOW_ANY_SCHEME="" \
     VNC_VIEW_ONLY="0" \
     PROFILE_DIR="/profile" \
     NO_SANDBOX="1" \
