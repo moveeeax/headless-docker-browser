@@ -138,7 +138,7 @@ Read these before exposing anything.
 ## Layout
 
 ```
-Dockerfile          debian:bookworm-slim + chromium, xvfb, fluxbox, x11vnc, novnc, pulseaudio
+Dockerfile          debian:trixie-slim + chromium, xvfb, fluxbox, x11vnc, novnc, pulseaudio
 entrypoint.sh       brings up X, audio, WM, VNC, noVNC, then supervises Chromium
 ctl.sh              -> /usr/local/bin/ctl   pixel-level input via xdotool/scrot
 cdp.py              -> /usr/local/bin/cdp   DOM-level control over CDP

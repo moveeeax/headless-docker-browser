@@ -116,7 +116,7 @@ check "CDP слушает только 127.0.0.1" \
 check "cdp ready дожидается страницы" \
     eq "$(docker exec smoke-default cdp ready 60)" "https://example.com/"
 check "cdp text читает страницу" \
-    out_has "Example Domain" docker exec smoke-default cdp text
+    out_has "documentation examples" docker exec smoke-default cdp text
 
 code="$(handshake_code smoke-default 9222 "$(page_id smoke-default 9222)")"
 if [ "$code" = "403" ]; then
